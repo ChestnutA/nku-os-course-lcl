@@ -5,7 +5,8 @@
 #include <mmu.h>
 #include <memlayout.h>
 #include <pmm.h>
-#include <default_pmm.h>
+#include <buddy_pmm.h>
+//#include <default_pmm.h>
 #include <sync.h>
 #include <error.h>
 
@@ -137,7 +138,7 @@ gdt_init(void) {
 //init_pmm_manager - initialize a pmm_manager instance
 static void
 init_pmm_manager(void) {
-    pmm_manager = &default_pmm_manager;
+    pmm_manager = &buddy_pmm_manager;
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -347,6 +348,24 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
      *   PTE_W           0x002                   // page table/directory entry flags bit : Writeable
      *   PTE_U           0x004                   // page table/directory entry flags bit : User can access
      */
+    pde_t *pdep = pgdir + PDX(la);
+    if (*pdep & PTE_P) {
+        pte_t *ptep = (pte_t *)KADDR(*pdep & ~0x0fff) + PTX(la);
+        return ptep;
+    }
+
+    struct Page *page;
+    if (!create || ((page = alloc_page()) == NULL)) {
+        return NULL;
+    }
+
+    set_page_ref(page, 1);
+    uintptr_t pa = page2pa(page) & ~0x0fff;
+    memset((void *)KADDR(pa), 0, PGSIZE);
+    *pdep = pa | PTE_P | PTE_W | PTE_U;
+    pte_t *ptep = (pte_t *)KADDR(pa) + PTX(la);
+
+    return ptep;
 #if 0
     pde_t *pdep = NULL;   // (1) find page directory entry
     if (0) {              // (2) check if entry is not present
@@ -395,8 +414,16 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      * DEFINEs:
      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
      */
+    if (*ptep & PTE_P) {
+        struct Page *page = pa2page(*ptep & ~0x0fff);
+        if (page_ref_dec(page) == 0) {
+            free_page(page);
+        }
+        *ptep = 0;
+        tlb_invalidate(pgdir, la);
+    }
 #if 0
-    if (0) {                      //(1) check if this page table entry is present
+    if (0) {                      //(1) check if page directory is present
         struct Page *page = NULL; //(2) find corresponding page to pte
                                   //(3) decrease page reference
                                   //(4) and free this page when page reference reachs 0

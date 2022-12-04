@@ -3,10 +3,7 @@
 #include <stab.h>
 #include <stdio.h>
 #include <string.h>
-#include <sync.h>
 #include <kdebug.h>
-#include <kmonitor.h>
-#include <assert.h>
 
 #define STACKFRAME_DEPTH 20
 
@@ -305,5 +302,17 @@ print_stackframe(void) {
       *           NOTICE: the calling funciton's return addr eip  = ss:[ebp+4]
       *                   the calling funciton's ebp = ss:[ebp]
       */
+    uint32_t* ebp = (uint32_t *)read_ebp();
+    uint32_t eip = read_eip();
+        for (int i = 0; i < STACKFRAME_DEPTH && (uint32_t)ebp != 0; ++ i) {
+        cprintf("ebp:0x%08x eip:0x%08x args:", (uint32_t)ebp, eip);
+        for (int argi = 0; argi < 4; argi++) {
+            cprintf("0x%08x ", ebp[2 + argi]);
+        }
+        cprintf("\n");
+        print_debuginfo(eip - 1);
+        eip = ebp[1];//更新为其指向的位置上前一个字的值，函数返回的pc跳转地址
+        ebp = (uint32_t *)*ebp;//更新为其指向的位置上的值，这里存储着上一个栈块的ebp
+    }
 }
 
