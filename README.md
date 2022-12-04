@@ -1,1 +1,2 @@
-# nku-os-course-lcl
+# nku-os-course-l
+Code compare.
